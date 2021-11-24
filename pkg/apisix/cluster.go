@@ -87,6 +87,7 @@ type cluster struct {
 	baseURLHost      string
 	adminKey         string
 	cli              *http.Client
+	// 原子量状态，判断内存缓存是否与 APISIX 集群数据一致
 	cacheState       int32
 	cache            cache.Cache
 	cacheSynced      chan struct{}
@@ -102,6 +103,7 @@ type cluster struct {
 	metricsCollector metrics.Collector
 }
 
+// 创建 HTTP 客户端
 func newCluster(ctx context.Context, o *ClusterOptions) (Cluster, error) {
 	if o.BaseURL == "" {
 		return nil, errors.New("empty base url")
@@ -109,6 +111,7 @@ func newCluster(ctx context.Context, o *ClusterOptions) (Cluster, error) {
 	if o.Timeout == time.Duration(0) {
 		o.Timeout = _defaultTimeout
 	}
+	// 边缘触发同步周期
 	if o.SyncInterval.Duration == time.Duration(0) {
 		o.SyncInterval = types.TimeDuration{Duration: _defaultSyncInterval}
 	}
@@ -132,6 +135,7 @@ func newCluster(ctx context.Context, o *ClusterOptions) (Cluster, error) {
 		cacheSynced:      make(chan struct{}),
 		metricsCollector: o.MetricsCollector,
 	}
+	// 为不同的资源对象创建 HTTP 客户端
 	c.route = newRouteClient(c)
 	c.upstream = newUpstreamClient(c)
 	c.ssl = newSSLClient(c)
@@ -141,17 +145,21 @@ func newCluster(ctx context.Context, o *ClusterOptions) (Cluster, error) {
 	c.plugin = newPluginClient(c)
 	c.schema = newSchemaClient(c)
 
+	// 创建内存缓存，带有 Index
 	c.cache, err = cache.NewMemDBCache()
 	if err != nil {
 		return nil, err
 	}
 
+	// 初期同步缓存，仅用于 warm up
 	go c.syncCache(ctx)
+	// 定期同步插件 Schema
 	go c.syncSchema(ctx, o.SyncInterval.Duration)
 
 	return c, nil
 }
 
+// 拉取全部 APISIX 集群资源到内存缓存
 func (c *cluster) syncCache(ctx context.Context) {
 	log.Infow("syncing cache", zap.String("cluster", c.name))
 	now := time.Now()
@@ -177,6 +185,7 @@ func (c *cluster) syncCache(ctx context.Context) {
 		Steps:    5,
 	}
 	var lastSyncErr error
+	// 指数回避
 	err := wait.ExponentialBackoff(backoff, func() (done bool, _ error) {
 		// impossibly return: false, nil
 		// so can safe used

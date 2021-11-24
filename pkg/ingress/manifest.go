@@ -180,6 +180,10 @@ func (m *manifest) diff(om *manifest) (added, updated, deleted *manifest) {
 	return
 }
 
+// 同步 Diff 后的数据到 APISIX,
+// 该函数直接在各个 Informer 的 workqueue 中处理
+// [与 Kong 的区别]：Kong (1.x 版本) 全局只有一个 workqueue 
+//    每次 Informer 数据变化会 Diff 所有数据，统一进行同步
 func (c *Controller) syncManifests(ctx context.Context, added, updated, deleted *manifest) error {
 	var merr *multierror.Error
 

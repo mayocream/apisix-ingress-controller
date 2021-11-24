@@ -31,6 +31,8 @@ var (
 	}
 )
 
+// 解析 K8s 资源的注解字段，注解可以配置自定义插件，与 Kong 类似
+// [与 Kong 的区别]：Kong 还通过注解字段配置 https / 302 跳转 / path strip 等
 func (t *translator) translateAnnotations(anno map[string]string) apisix.Plugins {
 	extractor := annotations.NewExtractor(anno)
 	plugins := make(apisix.Plugins)

@@ -125,6 +125,7 @@ func (c *ingressController) sync(ctx context.Context, ev *types.Event) error {
 		ing = ev.Tombstone.(kube.Ingress)
 	}
 
+	// 数据转化 handler，与 Kong 中的 translate 包类似
 	tctx, err := c.controller.translator.TranslateIngress(ing)
 	if err != nil {
 		log.Errorw("failed to translate ingress",
@@ -172,6 +173,8 @@ func (c *ingressController) sync(ctx context.Context, ev *types.Event) error {
 			upstreams: oldCtx.Upstreams,
 			ssl:       oldCtx.SSL,
 		}
+		// 对数据进行 Diff
+		// Kong 有专用的工具包 decK 用于 Diff 与数据同步
 		added, updated, deleted = m.diff(om)
 	}
 	if err := c.controller.syncManifests(ctx, added, updated, deleted); err != nil {

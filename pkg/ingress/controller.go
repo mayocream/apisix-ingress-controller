@@ -115,6 +115,7 @@ type Controller struct {
 	apisixConsumerInformer      cache.SharedIndexInformer
 	apisixConsumerLister        listersv2alpha1.ApisixConsumerLister
 
+	// 每个 informer 对应一个 workqueue 
 	// resource controllers
 	namespaceController     *namespaceController
 	podController           *podController
@@ -191,6 +192,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	return c, nil
 }
 
+// 创建 informer 以及 controller
 func (c *Controller) initWhenStartLeading() {
 	var (
 		ingressInformer     cache.SharedIndexInformer
@@ -260,6 +262,8 @@ func (c *Controller) initWhenStartLeading() {
 	c.apisixTlsInformer = apisixFactory.Apisix().V1().ApisixTlses().Informer()
 	c.apisixConsumerInformer = apisixFactory.Apisix().V2alpha1().ApisixConsumers().Informer()
 
+	// new*Controller 系列函数会给 informer 添加事件处理函数
+
 	if c.cfg.Kubernetes.WatchEndpointSlices {
 		c.endpointSliceController = c.newEndpointSliceController()
 	} else {
@@ -292,6 +296,7 @@ func (c *Controller) recorderEventS(object runtime.Object, eventtype, reason str
 	c.recorder.Event(object, eventtype, reason, msg)
 }
 
+// 封装 wait group
 func (c *Controller) goAttach(handler func()) {
 	c.wg.Add(1)
 	go func() {
@@ -315,6 +320,7 @@ func (c *Controller) Run(stop chan struct{}) error {
 	}()
 	c.MetricsCollector.ResetLeader(false)
 
+	// 启动 Admission Controller
 	go func() {
 		if err := c.apiServer.Run(rootCtx.Done()); err != nil {
 			log.Errorf("failed to launch API Server: %s", err)
@@ -338,6 +344,7 @@ func (c *Controller) Run(stop chan struct{}) error {
 		RenewDeadline: 5 * time.Second,
 		RetryPeriod:   2 * time.Second,
 		Callbacks: leaderelection.LeaderCallbacks{
+			// 成为 Leader 时 callback 函数
 			OnStartedLeading: c.run,
 			OnNewLeader: func(identity string) {
 				log.Warnf("found a new leader %s", identity)
@@ -372,6 +379,7 @@ func (c *Controller) Run(stop chan struct{}) error {
 election:
 	curCtx, cancel := context.WithCancel(rootCtx)
 	c.leaderContextCancelFunc = cancel
+	// 竞争选举 Leader
 	elector.Run(curCtx)
 	select {
 	case <-rootCtx.Done():
@@ -400,6 +408,7 @@ func (c *Controller) run(ctx context.Context) {
 		BaseURL:          c.cfg.APISIX.DefaultClusterBaseURL,
 		MetricsCollector: c.MetricsCollector,
 	}
+	// 创建一个 APISIX 集群 HTTP 客户端
 	err := c.apisix.AddCluster(ctx, clusterOpts)
 	if err != nil && err != apisix.ErrDuplicatedCluster {
 		// TODO give up the leader role
@@ -419,8 +428,10 @@ func (c *Controller) run(ctx context.Context) {
 		return
 	}
 
+	// 创建 informer 以及绑定处理函数
 	c.initWhenStartLeading()
 
+	// 根据 Label 查找 Namespace
 	// list namesapce and init watchingNamespace
 	if err := c.initWatchingNamespaceByLabels(ctx); err != nil {
 		ctx.Done()
